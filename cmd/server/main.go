@@ -52,9 +52,19 @@ func main() {
 		log.Fatalf("admin: %v", err)
 	}
 	handler := panel.Handler()
+	// Always serve the panel on the local HTTP address, so an SSH tunnel keeps working
+	// regardless of the public HTTPS setup.
+	go func() {
+		log.Printf("admin panel on http://%s (user %q)", *httpAddr, *adminUser)
+		if err := http.ListenAndServe(*httpAddr, handler); err != nil {
+			log.Fatalf("admin http: %v", err)
+		}
+	}()
+	// Additionally serve public HTTPS with an automatic Let's Encrypt certificate when a
+	// panel domain is set. TLS-ALPN-01 runs on :443; :80 serves the HTTP-01 challenge and
+	// redirects to HTTPS. The cert is cached on disk and autocert renews it automatically
+	// (well before the ~90-day expiry) for as long as the service runs.
 	if *panelDomain != "" {
-		// Public HTTPS with an automatic Let's Encrypt certificate. TLS-ALPN-01 runs on
-		// :443; :80 serves the HTTP-01 challenge and redirects to HTTPS.
 		certDir := filepath.Join(filepath.Dir(*dbPath), "certs")
 		os.MkdirAll(certDir, 0700)
 		m := &autocert.Manager{
@@ -63,7 +73,7 @@ func main() {
 			Cache:      autocert.DirCache(certDir),
 		}
 		go func() {
-			log.Printf("admin panel on https://%s (user %q)", *panelDomain, *adminUser)
+			log.Printf("admin panel also on https://%s", *panelDomain)
 			s := &http.Server{Addr: ":443", Handler: handler, TLSConfig: m.TLSConfig()}
 			if err := s.ListenAndServeTLS("", ""); err != nil {
 				log.Fatalf("admin https: %v", err)
@@ -72,13 +82,6 @@ func main() {
 		go func() {
 			if err := http.ListenAndServe(":80", m.HTTPHandler(redirectHTTPS())); err != nil {
 				log.Fatalf("admin http-challenge: %v", err)
-			}
-		}()
-	} else {
-		go func() {
-			log.Printf("admin panel on http://%s (user %q)", *httpAddr, *adminUser)
-			if err := http.ListenAndServe(*httpAddr, handler); err != nil {
-				log.Fatalf("admin http: %v", err)
 			}
 		}()
 	}
