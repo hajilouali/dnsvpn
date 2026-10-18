@@ -1,0 +1,13 @@
+{
+  "zone": "t.example.com",
+  "psk": "PUT_THE_SERVER_PSK_HERE",
+  "token": "PUT_YOUR_USER_TOKEN_HERE",
+  "socks": "127.0.0.1:1080",
+  "workers": 128,
+  "scan": true,
+  "max_resolvers": 20,
+  "max_inflight": 6,
+  "rescan": "60s",
+  "query_timeout": "1500ms",
+  "candidates": "2.188.21.0/24, 178.22.122.100, 185.51.200.2"
+}

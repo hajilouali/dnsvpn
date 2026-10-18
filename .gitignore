@@ -1,0 +1,27 @@
+# build output
+/bin/
+/dist/
+/release/
+*.exe
+*.aar
+*.apk
+dnsvpn-server
+dnsvpn-client
+dnsvpn-client-*
+
+# runtime data & secrets
+*.db
+*.db-wal
+*.db-shm
+/server/data/
+*.key
+*.pub
+# real client configs hold the PSK/token; only the example is tracked
+config.json
+!config.example.json
+
+# editor / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

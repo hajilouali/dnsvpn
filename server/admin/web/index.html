@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DNS-VPN Admin</title>
+<style>
+  :root{--bg:#0f1420;--panel:#171e2e;--line:#273349;--fg:#e6edf6;--mut:#8aa0bd;--acc:#4f9cff;--ok:#39c07f;--bad:#e5565b;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,Segoe UI,Roboto,sans-serif}
+  header{padding:16px 22px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
+  header h1{font-size:17px;margin:0;font-weight:600}
+  .wrap{max-width:1100px;margin:0 auto;padding:22px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:20px}
+  h2{font-size:14px;margin:0 0 14px;color:var(--mut);text-transform:uppercase;letter-spacing:.06em}
+  label{display:block;font-size:12px;color:var(--mut);margin:0 0 4px}
+  input{width:100%;padding:8px 10px;background:#0c111b;border:1px solid var(--line);border-radius:8px;color:var(--fg)}
+  .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;align-items:end}
+  button{padding:8px 14px;border:0;border-radius:8px;background:var(--acc);color:#fff;cursor:pointer;font-weight:600}
+  button.ghost{background:transparent;border:1px solid var(--line);color:var(--fg)}
+  button.danger{background:var(--bad)}
+  button.mut{background:#2a3850}
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);font-size:13px;vertical-align:middle}
+  th{color:var(--mut);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  .tok{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--mut);cursor:pointer}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600}
+  .pill.on{background:rgba(57,192,127,.15);color:var(--ok)}
+  .pill.off{background:rgba(229,86,91,.15);color:var(--bad)}
+  .bar{height:6px;background:#0c111b;border-radius:4px;overflow:hidden;min-width:90px}
+  .bar>i{display:block;height:100%;background:var(--acc)}
+  .acts{display:flex;gap:6px;flex-wrap:wrap}
+  .muted{color:var(--mut)}
+  .err{color:var(--bad);margin-left:auto;font-size:13px}
+</style>
+</head>
+<body>
+<header>
+  <h1>🛰️ DNS-VPN Admin</h1>
+  <span class="muted" id="count"></span>
+  <span class="err" id="err"></span>
+  <button class="ghost" style="margin-left:auto" onclick="load()">Refresh</button>
+</header>
+<div class="wrap">
+  <div class="card">
+    <h2>Create user</h2>
+    <div class="row">
+      <div><label>Username</label><input id="u_name" placeholder="alice"></div>
+      <div><label>Quota (GB, 0 = unlimited)</label><input id="u_quota" type="number" value="0" min="0"></div>
+      <div><label>Max concurrent (0 = unlimited)</label><input id="u_conc" type="number" value="0" min="0"></div>
+      <div><label>Expires in days (0 = never)</label><input id="u_exp" type="number" value="0" min="0"></div>
+      <div><button onclick="create()">Add user</button></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Users</h2>
+    <table>
+      <thead><tr>
+        <th>User</th><th>Token</th><th>Status</th><th>Usage</th><th>Limits</th><th>Live</th><th>Actions</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+</div>
+<script>
+const $ = s => document.querySelector(s);
+const fmtBytes = n => { if(!n) return '0 B'; const u=['B','KB','MB','GB','TB']; let i=Math.floor(Math.log(n)/Math.log(1024)); return (n/Math.pow(1024,i)).toFixed(i?1:0)+' '+u[i]; };
+const GB = 1024*1024*1024;
+
+async function api(method, path, body){
+  const r = await fetch(path, {method, headers: body?{'Content-Type':'application/json'}:{}, body: body?JSON.stringify(body):undefined});
+  if(!r.ok) throw new Error(await r.text() || r.status);
+  return r.status===204 ? null : r.json();
+}
+function showErr(e){ $('#err').textContent = e ? ('⚠ '+e) : ''; }
+
+async function load(){
+  showErr('');
+  try{
+    const users = await api('GET','/api/users');
+    $('#count').textContent = users.length + ' user' + (users.length===1?'':'s');
+    $('#rows').innerHTML = users.map(row).join('');
+  }catch(e){ showErr(e.message); }
+}
+
+function row(u){
+  const exp = u.expires_at ? new Date(u.expires_at*1000).toISOString().slice(0,10) : 'never';
+  const pct = u.quota_bytes>0 ? Math.min(100, Math.round(u.used_bytes*100/u.quota_bytes)) : 0;
+  const quotaTxt = u.quota_bytes>0 ? fmtBytes(u.quota_bytes) : '∞';
+  const concTxt = u.max_concurrent>0 ? u.max_concurrent : '∞';
+  return `<tr>
+    <td><b>${esc(u.username)}</b><div class="muted">#${u.id}</div></td>
+    <td><span class="tok" title="click to copy" onclick="copy('${u.token}')">${u.token.slice(0,10)}…</span></td>
+    <td><span class="pill ${u.enabled?'on':'off'}">${u.enabled?'enabled':'disabled'}</span></td>
+    <td>${fmtBytes(u.used_bytes)} / ${quotaTxt}
+        ${u.quota_bytes>0?`<div class="bar"><i style="width:${pct}%"></i></div>`:''}</td>
+    <td class="muted">conc ${concTxt}<br>exp ${exp}</td>
+    <td>${u.active>0?`<span class="pill on">${u.active}</span>`:'<span class="muted">—</span>'}</td>
+    <td><div class="acts">
+      ${u.enabled
+        ? `<button class="mut" onclick="toggle(${u.id},false)">Disable</button>`
+        : `<button onclick="toggle(${u.id},true)">Enable</button>`}
+      <button class="ghost" onclick="editLimits(${u.id})">Limits</button>
+      <button class="ghost" onclick="reset(${u.id})">Reset</button>
+      <button class="danger" onclick="del(${u.id},'${esc(u.username)}')">Delete</button>
+    </div></td>
+  </tr>`;
+}
+function esc(s){ return (s+'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function copy(t){ navigator.clipboard.writeText(t); }
+
+async function create(){
+  const body = {
+    username: $('#u_name').value.trim(),
+    quota_bytes: Math.round((parseFloat($('#u_quota').value)||0)*GB),
+    max_concurrent: parseInt($('#u_conc').value)||0,
+    expires_in_days: parseInt($('#u_exp').value)||0,
+  };
+  if(!body.username){ showErr('username required'); return; }
+  try{ await api('POST','/api/users',body); $('#u_name').value=''; load(); }
+  catch(e){ showErr(e.message); }
+}
+async function toggle(id,on){ try{ await api('POST',`/api/users/${id}/${on?'enable':'disable'}`); load(); }catch(e){showErr(e.message);} }
+async function reset(id){ if(!confirm('Reset usage counter to zero?'))return; try{ await api('POST',`/api/users/${id}/reset`); load(); }catch(e){showErr(e.message);} }
+async function del(id,name){ if(!confirm('Delete user '+name+'?'))return; try{ await api('DELETE',`/api/users/${id}`); load(); }catch(e){showErr(e.message);} }
+async function editLimits(id){
+  const q = prompt('Quota in GB (0 = unlimited):','0'); if(q===null) return;
+  const c = prompt('Max concurrent (0 = unlimited):','0'); if(c===null) return;
+  const d = prompt('Expires in days (0 = never):','0'); if(d===null) return;
+  try{ await api('PUT',`/api/users/${id}`,{
+    quota_bytes: Math.round((parseFloat(q)||0)*GB),
+    max_concurrent: parseInt(c)||0,
+    expires_in_days: parseInt(d)||0,
+  }); load(); }catch(e){showErr(e.message);}
+}
+load();
+setInterval(load, 10000);
+</script>
+</body>
+</html>
