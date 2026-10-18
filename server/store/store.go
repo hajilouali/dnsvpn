@@ -63,7 +63,32 @@ CREATE TABLE IF NOT EXISTS users (
   used_bytes     INTEGER NOT NULL DEFAULT 0,
   max_concurrent INTEGER NOT NULL DEFAULT 0,
   created_at     INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
 );`)
+	return err
+}
+
+// GetSetting returns a stored setting and whether it was present.
+func (s *Store) GetSetting(key string) (string, bool, error) {
+	var v string
+	err := s.db.QueryRow(`SELECT value FROM settings WHERE key=?`, key).Scan(&v)
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return v, true, nil
+}
+
+// SetSetting inserts or updates a setting.
+func (s *Store) SetSetting(key, value string) error {
+	_, err := s.db.Exec(
+		`INSERT INTO settings(key,value) VALUES(?,?)
+		 ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, value)
 	return err
 }
 

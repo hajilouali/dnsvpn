@@ -13,6 +13,7 @@ set -euo pipefail
 
 ZONE=""
 HTTP_ADDR="127.0.0.1:8080"
+PANEL_DOMAIN=""                  # optional: serve the panel publicly over HTTPS on this domain
 BIN_SRC=""                       # optional local binary; otherwise built/downloaded
 REPO="hajilouali/dnsvpn"
 PREFIX="/usr/local/bin"
@@ -27,6 +28,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --zone) ZONE="$2"; shift 2;;
     --http) HTTP_ADDR="$2"; shift 2;;
+    --panel-domain) PANEL_DOMAIN="$2"; shift 2;;
     --bin)  BIN_SRC="$2"; shift 2;;
     --repo) REPO="$2"; shift 2;;
     *) err "unknown argument: $1";;
@@ -80,6 +82,9 @@ PSK=$PSK
 HTTP_ADDR=$HTTP_ADDR
 ADMIN_USER=admin
 ADMIN_PASS=$ADMIN_PASS
+# serve the panel publicly over HTTPS on this domain (auto Let's Encrypt). Empty =
+# localhost only (reach it over an SSH tunnel). e.g. PANEL_DOMAIN=panel.example.com
+PANEL_DOMAIN=$PANEL_DOMAIN
 # default resolver candidates baked into clients' config links (CIDRs allowed), e.g.
 # CANDIDATES=2.188.21.0/24,178.22.122.100,185.51.200.2
 CANDIDATES=
@@ -101,7 +106,7 @@ Wants=network-online.target
 [Service]
 User=$USER_NAME
 EnvironmentFile=$ENV_FILE
-ExecStart=/bin/sh -c '$PREFIX/dnsvpn-server -zone "\$ZONE" -psk "\$PSK" -dns :53 -http "\$HTTP_ADDR" -db $DATADIR/users.db -admin-user "\$ADMIN_USER" -admin-pass "\$ADMIN_PASS" -candidates "\$CANDIDATES"'
+ExecStart=/bin/sh -c '$PREFIX/dnsvpn-server -zone "\$ZONE" -psk "\$PSK" -dns :53 -http "\$HTTP_ADDR" -db $DATADIR/users.db -admin-user "\$ADMIN_USER" -admin-pass "\$ADMIN_PASS" -candidates "\$CANDIDATES" -panel-domain "\$PANEL_DOMAIN"'
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 Restart=always
 RestartSec=2
@@ -122,7 +127,13 @@ if command -v ufw >/dev/null 2>&1; then
   ufw allow 53/udp  >/dev/null 2>&1 || true
   ufw allow 53/tcp  >/dev/null 2>&1 || true
   ufw allow 22/tcp  >/dev/null 2>&1 || true
-  log "ufw rules added for 22,53 (enable ufw yourself if desired)."
+  if [ -n "$PANEL_DOMAIN" ]; then
+    ufw allow 80/tcp  >/dev/null 2>&1 || true
+    ufw allow 443/tcp >/dev/null 2>&1 || true
+    log "ufw rules added for 22,53,80,443 (enable ufw yourself if desired)."
+  else
+    log "ufw rules added for 22,53 (enable ufw yourself if desired)."
+  fi
 fi
 
 sleep 1
@@ -137,7 +148,8 @@ $(printf '\033[1;32m================ dnsvpn server installed ================\03
   Service : $(systemctl is-active dnsvpn.service)   (journalctl -u dnsvpn -f to watch)
   Zone    : $ZONE
   PSK     : $PSK
-  Admin   : http://$HTTP_ADDR   user: admin   pass: $ADMIN_PASS
+  Admin   : $( [ -n "$PANEL_DOMAIN" ] && echo "https://$PANEL_DOMAIN" || echo "http://$HTTP_ADDR (localhost)" )   user: admin   pass: $ADMIN_PASS
+            (change the password from the panel; the password above is only the seed)
 
   DNS delegation — set these at your domain's DNS (replace example.com):
     A    ns1.<parent>    $IP        (DNS only, no proxy/CDN)
@@ -147,8 +159,12 @@ $(printf '\033[1;32m================ dnsvpn server installed ================\03
   Give each user: the zone, the PSK above, and a per-user token you create in the
   admin panel. Clients need all three.
 
-  The admin panel is bound to $HTTP_ADDR. If that is localhost, reach it over SSH:
-    ssh -L 8080:127.0.0.1:8080 <you>@$IP      then open http://127.0.0.1:8080
+  $( if [ -n "$PANEL_DOMAIN" ]; then
+       echo "Point $PANEL_DOMAIN (A record) at $IP; the panel is public over HTTPS."
+     else
+       echo "The panel is localhost-only. Reach it over SSH:"
+       echo "    ssh -L 8088:127.0.0.1:8080 <you>@$IP   then open http://127.0.0.1:8088"
+     fi )
 
 $(printf '\033[1;32m=========================================================\033[0m')
 EOF

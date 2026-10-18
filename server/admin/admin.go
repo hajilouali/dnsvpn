@@ -17,7 +17,10 @@ import (
 	"dnsvpn/server/store"
 
 	qrcode "github.com/skip2/go-qrcode"
+	"golang.org/x/crypto/bcrypt"
 )
+
+const adminPassKey = "admin_pass_hash"
 
 //go:embed web/*
 var webFS embed.FS
@@ -26,19 +29,37 @@ var webFS embed.FS
 type Panel struct {
 	store      *store.Store
 	adminUser  string
-	adminPass  string
 	zone       string // tunnel zone, baked into each user's config link
 	psk        string // shared key, baked into each user's config link
 	candidates string // default resolver candidates offered to clients
 }
 
-// New builds a Panel handler. zone/psk/candidates are embedded into the per-user
-// dnsvpn:// config links the panel generates.
+// New builds a Panel handler. adminPass is the bootstrap password: it is used only to
+// seed the stored bcrypt hash on first run; afterwards the hash in the database wins, so
+// a password changed in the panel survives restarts (and the installer's flag no longer
+// overrides it). zone/psk/candidates are embedded into the per-user config links.
 func New(st *store.Store, adminUser, adminPass, zone, psk, candidates string) (*Panel, error) {
-	return &Panel{
-		store: st, adminUser: adminUser, adminPass: adminPass,
+	p := &Panel{
+		store: st, adminUser: adminUser,
 		zone: zone, psk: psk, candidates: candidates,
-	}, nil
+	}
+	if _, ok, err := st.GetSetting(adminPassKey); err != nil {
+		return nil, err
+	} else if !ok {
+		if err := p.setPassword(adminPass); err != nil {
+			return nil, err
+		}
+	}
+	return p, nil
+}
+
+// setPassword stores a bcrypt hash of pw as the admin password.
+func (p *Panel) setPassword(pw string) error {
+	h, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	return p.store.SetSetting(adminPassKey, string(h))
 }
 
 // link builds the self-contained dnsvpn:// config link for a user.
@@ -63,6 +84,7 @@ func (p *Panel) Handler() http.Handler {
 	mux.HandleFunc("POST /api/users/{id}/reset", p.auth(p.resetUser))
 	mux.HandleFunc("GET /api/users/{id}/qr", p.auth(p.userQR))
 	mux.HandleFunc("DELETE /api/users/{id}", p.auth(p.deleteUser))
+	mux.HandleFunc("POST /api/password", p.auth(p.changePassword))
 
 	sub, _ := fs.Sub(webFS, "web")
 	mux.Handle("GET /", p.authPage(http.FileServer(http.FS(sub))))
@@ -76,9 +98,14 @@ func (p *Panel) checkAuth(r *http.Request) bool {
 	if !ok {
 		return false
 	}
-	okU := subtle.ConstantTimeCompare([]byte(u), []byte(p.adminUser)) == 1
-	okP := subtle.ConstantTimeCompare([]byte(pw), []byte(p.adminPass)) == 1
-	return okU && okP
+	if subtle.ConstantTimeCompare([]byte(u), []byte(p.adminUser)) != 1 {
+		return false
+	}
+	hash, ok2, err := p.store.GetSetting(adminPassKey)
+	if err != nil || !ok2 {
+		return false
+	}
+	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(pw)) == nil
 }
 
 func (p *Panel) auth(h http.HandlerFunc) http.HandlerFunc {
@@ -231,6 +258,38 @@ func (p *Panel) resetUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := p.store.ResetUsage(id); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	writeJSON(w, 200, map[string]string{"status": "ok"})
+}
+
+type passwordReq struct {
+	Old string `json:"old"`
+	New string `json:"new"`
+}
+
+// changePassword verifies the current admin password and stores a new bcrypt hash.
+func (p *Panel) changePassword(w http.ResponseWriter, r *http.Request) {
+	var req passwordReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json", 400)
+		return
+	}
+	if len(req.New) < 6 {
+		http.Error(w, "new password must be at least 6 characters", 400)
+		return
+	}
+	hash, ok, err := p.store.GetSetting(adminPassKey)
+	if err != nil || !ok {
+		http.Error(w, "server error", 500)
+		return
+	}
+	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(req.Old)) != nil {
+		http.Error(w, "current password is wrong", 403)
+		return
+	}
+	if err := p.setPassword(req.New); err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}

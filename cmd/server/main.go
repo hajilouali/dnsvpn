@@ -9,10 +9,13 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	"dnsvpn/server/admin"
 	"dnsvpn/server/engine"
 	"dnsvpn/server/store"
+
+	"golang.org/x/crypto/acme/autocert"
 )
 
 func main() {
@@ -23,8 +26,9 @@ func main() {
 		httpAddr  = flag.String("http", "127.0.0.1:8080", "address for the web admin panel")
 		dbPath    = flag.String("db", "dnsvpn.db", "path to the SQLite user database")
 		adminUser = flag.String("admin-user", "admin", "admin panel username")
-		adminPass = flag.String("admin-pass", "", "admin panel password (random if empty)")
+		adminPass = flag.String("admin-pass", "", "admin panel bootstrap password (random if empty; change it later in the panel)")
 		candidates = flag.String("candidates", "", "default resolver candidates baked into clients' config links (comma-separated, CIDRs allowed)")
+		panelDomain = flag.String("panel-domain", "", "serve the panel publicly over HTTPS on this domain with an auto Let's Encrypt cert (needs :80 and :443 open)")
 	)
 	flag.Parse()
 	if *zone == "" || *psk == "" {
@@ -47,12 +51,37 @@ func main() {
 	if err != nil {
 		log.Fatalf("admin: %v", err)
 	}
-	go func() {
-		log.Printf("admin panel on http://%s (user %q)", *httpAddr, *adminUser)
-		if err := http.ListenAndServe(*httpAddr, panel.Handler()); err != nil {
-			log.Fatalf("admin http: %v", err)
+	handler := panel.Handler()
+	if *panelDomain != "" {
+		// Public HTTPS with an automatic Let's Encrypt certificate. TLS-ALPN-01 runs on
+		// :443; :80 serves the HTTP-01 challenge and redirects to HTTPS.
+		certDir := filepath.Join(filepath.Dir(*dbPath), "certs")
+		os.MkdirAll(certDir, 0700)
+		m := &autocert.Manager{
+			Prompt:     autocert.AcceptTOS,
+			HostPolicy: autocert.HostWhitelist(*panelDomain),
+			Cache:      autocert.DirCache(certDir),
 		}
-	}()
+		go func() {
+			log.Printf("admin panel on https://%s (user %q)", *panelDomain, *adminUser)
+			s := &http.Server{Addr: ":443", Handler: handler, TLSConfig: m.TLSConfig()}
+			if err := s.ListenAndServeTLS("", ""); err != nil {
+				log.Fatalf("admin https: %v", err)
+			}
+		}()
+		go func() {
+			if err := http.ListenAndServe(":80", m.HTTPHandler(redirectHTTPS())); err != nil {
+				log.Fatalf("admin http-challenge: %v", err)
+			}
+		}()
+	} else {
+		go func() {
+			log.Printf("admin panel on http://%s (user %q)", *httpAddr, *adminUser)
+			if err := http.ListenAndServe(*httpAddr, handler); err != nil {
+				log.Fatalf("admin http: %v", err)
+			}
+		}()
+	}
 
 	srv, err := engine.New(engine.Config{
 		Zone:       *zone,
@@ -69,4 +98,11 @@ func main() {
 	if err := srv.ServeDNS(*dnsAddr); err != nil {
 		log.Fatalf("dns listener: %v", err)
 	}
+}
+
+// redirectHTTPS sends any plain-HTTP request that isn't an ACME challenge to https://.
+func redirectHTTPS() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "https://"+r.Host+r.URL.RequestURI(), http.StatusMovedPermanently)
+	})
 }

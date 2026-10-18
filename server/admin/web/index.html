@@ -46,7 +46,8 @@
   <h1>🛰️ DNS-VPN Admin</h1>
   <span class="muted" id="count"></span>
   <span class="err" id="err"></span>
-  <button class="ghost" style="margin-left:auto" onclick="load()">Refresh</button>
+  <button class="ghost" style="margin-left:auto" onclick="changePassword()">Change password</button>
+  <button class="ghost" onclick="load()">Refresh</button>
 </header>
 <div class="wrap">
   <div class="card">
@@ -125,6 +126,7 @@ function row(u){
         ? `<button class="mut" onclick="toggle(${u.id},false)">Disable</button>`
         : `<button onclick="toggle(${u.id},true)">Enable</button>`}
       <button onclick="showCfg(${u.id})">Config</button>
+      <button class="mut" onclick="copyLinkRow(${u.id})">Copy link</button>
       <button class="ghost" onclick="editLimits(${u.id})">Limits</button>
       <button class="ghost" onclick="reset(${u.id})">Reset</button>
       <button class="danger" onclick="del(${u.id},'${esc(u.username)}')">Delete</button>
@@ -143,6 +145,19 @@ function showCfg(id){
 }
 function closeCfg(){ $('#cfgOverlay').classList.remove('show'); }
 function copyLink(){ navigator.clipboard.writeText($('#cfgLink').value); }
+function copyLinkRow(id){
+  const u = window._users[id]; if(!u) return;
+  navigator.clipboard.writeText(u.link).then(()=>showErr(''), ()=>showErr('copy failed (clipboard needs HTTPS or localhost)'));
+}
+
+async function changePassword(){
+  const oldp = prompt('Current admin password:'); if(oldp===null) return;
+  const newp = prompt('New password (min 6 chars):'); if(newp===null) return;
+  const again = prompt('Repeat new password:'); if(again===null) return;
+  if(newp!==again){ showErr('passwords do not match'); return; }
+  try{ await api('POST','/api/password',{old:oldp,new:newp}); showErr(''); alert('Password changed. You may need to re-enter it on the next request.'); }
+  catch(e){ showErr(e.message); }
+}
 
 async function create(){
   const body = {

@@ -70,12 +70,22 @@ installed, or pass your own binary with `--bin ./dnsvpn-server`.
 
 ## 3. Manage users
 
-The admin panel is bound to `127.0.0.1:8080` by default. Reach it over SSH:
+By default the admin panel is bound to `127.0.0.1:8080` (localhost only). Reach it over SSH:
 
 ```bash
-ssh -L 8080:127.0.0.1:8080 you@SERVER_IP
-# then open http://127.0.0.1:8080  (user: admin, password: from the installer output)
+ssh -L 8088:127.0.0.1:8080 you@SERVER_IP
+# then open http://127.0.0.1:8088  (user: admin, password: from the installer output)
 ```
+
+**Public HTTPS (optional).** To reach the panel directly in a browser, give it a domain and
+run the server with `-panel-domain panel.example.com` (the installer's `--panel-domain`
+sets this). Point that domain's `A` record at the server and open ports 80 and 443; the
+server fetches and renews a Let's Encrypt certificate automatically and serves the panel at
+`https://panel.example.com`. The panel is behind HTTP basic auth.
+
+**Change the admin password** from the panel's "Change password" button (top right). The
+installer's `-admin-pass` is only a bootstrap seed — the real password is stored (bcrypt
+hashed) in the database and survives restarts once changed.
 
 Create a user to get a **token**, and set its quota / expiry / max concurrent streams.
 Each client needs three things: the **zone**, the **PSK**, and its **token**.
