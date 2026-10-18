@@ -15,6 +15,7 @@ import (
 
 	"dnsvpn/client/core"
 	"dnsvpn/client/socks"
+	"dnsvpn/internal/configlink"
 	"dnsvpn/internal/dispatcher"
 )
 
@@ -57,6 +58,7 @@ type fileConfig struct {
 func main() {
 	var (
 		configPath = flag.String("config", "", "path to a JSON config file (flags override its values)")
+		link       = flag.String("link", "", "a dnsvpn:// config link from the admin panel (sets zone/psk/token/candidates)")
 		zone       = flag.String("zone", "", "tunnel zone, e.g. t.example.com (required)")
 		psk        = flag.String("psk", "", "pre-shared key shared with the server (required)")
 		token      = flag.String("token", "", "user auth token (from the admin panel)")
@@ -84,8 +86,30 @@ func main() {
 		applyFileConfig(fc, set, zone, psk, token, resolvers, candidates, socksAddr, mode, workers, maxInflight, scan, maxRes, rescan, qTimeout)
 	}
 
+	// A dnsvpn:// link fills zone/psk/token/candidates for any flag not set explicitly.
+	if *link != "" {
+		lc, err := configlink.Decode(*link)
+		if err != nil {
+			log.Fatalf("link: %v", err)
+		}
+		set := map[string]bool{}
+		flag.Visit(func(f *flag.Flag) { set[f.Name] = true })
+		if !set["zone"] {
+			*zone = lc.Zone
+		}
+		if !set["psk"] {
+			*psk = lc.PSK
+		}
+		if !set["token"] && lc.Token != "" {
+			*token = lc.Token
+		}
+		if !set["candidates"] && lc.Candidates != "" {
+			*candidates = lc.Candidates
+		}
+	}
+
 	if *zone == "" || *psk == "" {
-		log.Fatal("both zone and psk are required (via -config or flags)")
+		log.Fatal("both zone and psk are required (via -config, -link, or flags)")
 	}
 
 	splitList := func(s string) []string {

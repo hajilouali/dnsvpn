@@ -23,6 +23,7 @@ import (
 
 	"dnsvpn/client/core"
 	"dnsvpn/client/socks"
+	"dnsvpn/internal/configlink"
 	"dnsvpn/internal/dispatcher"
 
 	"github.com/xjasonlyu/tun2socks/v2/engine"
@@ -181,4 +182,15 @@ func Status() string {
 	mu.Lock()
 	defer mu.Unlock()
 	return status
+}
+
+// DecodeLink parses a dnsvpn:// config link and returns its fields as a JSON object
+// {name,zone,psk,token,candidates}, for the app to fill its form from.
+func DecodeLink(link string) (string, error) {
+	c, err := configlink.Decode(link)
+	if err != nil {
+		return "", err
+	}
+	b, err := json.Marshal(c)
+	return string(b), err
 }

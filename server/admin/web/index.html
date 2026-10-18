@@ -32,6 +32,13 @@
   .acts{display:flex;gap:6px;flex-wrap:wrap}
   .muted{color:var(--mut)}
   .err{color:var(--bad);margin-left:auto;font-size:13px}
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:16px;z-index:10}
+  .overlay.show{display:flex}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;max-width:420px;width:100%;text-align:center}
+  .modal h3{margin:0 0 12px;font-size:15px}
+  .modal img{width:260px;height:260px;background:#fff;border-radius:8px;padding:8px}
+  .modal textarea{width:100%;height:70px;margin-top:12px;background:#0c111b;border:1px solid var(--line);border-radius:8px;color:var(--fg);font-family:ui-monospace,Consolas,monospace;font-size:11px;padding:8px;resize:none}
+  .modal .mrow{display:flex;gap:8px;margin-top:12px}
 </style>
 </head>
 <body>
@@ -63,6 +70,20 @@
     </table>
   </div>
 </div>
+
+<div class="overlay" id="cfgOverlay" onclick="if(event.target===this)closeCfg()">
+  <div class="modal">
+    <h3 id="cfgTitle">Client config</h3>
+    <img id="cfgQR" alt="QR">
+    <textarea id="cfgLink" readonly onclick="this.select()"></textarea>
+    <div class="mrow">
+      <button style="flex:1" onclick="copyLink()">Copy link</button>
+      <button class="ghost" style="flex:1" onclick="closeCfg()">Close</button>
+    </div>
+    <div class="muted" style="margin-top:10px;font-size:12px">Scan the QR in the dnsvpn Android app, or send the link to the user.</div>
+  </div>
+</div>
+
 <script>
 const $ = s => document.querySelector(s);
 const fmtBytes = n => { if(!n) return '0 B'; const u=['B','KB','MB','GB','TB']; let i=Math.floor(Math.log(n)/Math.log(1024)); return (n/Math.pow(1024,i)).toFixed(i?1:0)+' '+u[i]; };
@@ -79,6 +100,8 @@ async function load(){
   showErr('');
   try{
     const users = await api('GET','/api/users');
+    window._users = {};
+    users.forEach(u => window._users[u.id] = u);
     $('#count').textContent = users.length + ' user' + (users.length===1?'':'s');
     $('#rows').innerHTML = users.map(row).join('');
   }catch(e){ showErr(e.message); }
@@ -101,6 +124,7 @@ function row(u){
       ${u.enabled
         ? `<button class="mut" onclick="toggle(${u.id},false)">Disable</button>`
         : `<button onclick="toggle(${u.id},true)">Enable</button>`}
+      <button onclick="showCfg(${u.id})">Config</button>
       <button class="ghost" onclick="editLimits(${u.id})">Limits</button>
       <button class="ghost" onclick="reset(${u.id})">Reset</button>
       <button class="danger" onclick="del(${u.id},'${esc(u.username)}')">Delete</button>
@@ -109,6 +133,16 @@ function row(u){
 }
 function esc(s){ return (s+'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function copy(t){ navigator.clipboard.writeText(t); }
+
+function showCfg(id){
+  const u = window._users[id]; if(!u) return;
+  $('#cfgTitle').textContent = 'Config for ' + u.username;
+  $('#cfgLink').value = u.link;
+  $('#cfgQR').src = `/api/users/${id}/qr`;
+  $('#cfgOverlay').classList.add('show');
+}
+function closeCfg(){ $('#cfgOverlay').classList.remove('show'); }
+function copyLink(){ navigator.clipboard.writeText($('#cfgLink').value); }
 
 async function create(){
   const body = {

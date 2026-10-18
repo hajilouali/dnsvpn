@@ -80,6 +80,17 @@ ssh -L 8080:127.0.0.1:8080 you@SERVER_IP
 Create a user to get a **token**, and set its quota / expiry / max concurrent streams.
 Each client needs three things: the **zone**, the **PSK**, and its **token**.
 
+**Config link / QR.** Each user row has a **Config** button showing a self-contained
+`dnsvpn://…` link (and a QR code) that bundles the zone, PSK, token and default resolver
+candidates. Send the link to the user over any channel — it imports with no network round
+trip (so it still works to set up before a shutdown):
+
+- **Android:** tap the link, or scan the QR, or paste it with "Import link from clipboard".
+- **Desktop:** `dnsvpn-client -link "dnsvpn://…"`.
+
+Set the default resolver candidates baked into every link with the server's `-candidates`
+flag (CIDRs allowed), e.g. `-candidates 2.188.21.0/24,178.22.122.100`.
+
 ## 4. Clients
 
 Download a client from the [Releases](https://github.com/hajilouali/dnsvpn/releases)

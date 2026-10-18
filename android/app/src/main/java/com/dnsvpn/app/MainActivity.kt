@@ -1,6 +1,7 @@
 package com.dnsvpn.app
 
 import android.app.Activity
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.VpnService
@@ -8,7 +9,9 @@ import android.os.Bundle
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import com.dnsvpn.mobile.Mobile
 import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
@@ -18,6 +21,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var token: EditText
     private lateinit var candidates: EditText
     private lateinit var toggle: Button
+    private lateinit var importLink: Button
     private lateinit var status: TextView
 
     private val prefs by lazy { getSharedPreferences("dnsvpn", Context.MODE_PRIVATE) }
@@ -30,6 +34,7 @@ class MainActivity : AppCompatActivity() {
         token = findViewById(R.id.token)
         candidates = findViewById(R.id.candidates)
         toggle = findViewById(R.id.toggle)
+        importLink = findViewById(R.id.importLink)
         status = findViewById(R.id.status)
 
         zone.setText(prefs.getString("zone", ""))
@@ -45,13 +50,54 @@ class MainActivity : AppCompatActivity() {
                 prepareAndStart()
             }
         }
+        importLink.setOnClickListener { importFromClipboard() }
+
+        handleLinkIntent(intent)
         refresh()
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleLinkIntent(intent)
     }
 
     override fun onResume() {
         super.onResume()
         refresh()
     }
+
+    /** Import a dnsvpn:// link the app was opened with (tapped link / QR). */
+    private fun handleLinkIntent(intent: Intent?) {
+        val data = intent?.data ?: return
+        if (data.scheme == "dnsvpn") applyLink(data.toString())
+    }
+
+    private fun importFromClipboard() {
+        val cb = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val text = cb.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString()?.trim()
+        if (text.isNullOrEmpty() || !text.startsWith("dnsvpn://")) {
+            toast("Clipboard has no dnsvpn:// link")
+            return
+        }
+        applyLink(text)
+    }
+
+    private fun applyLink(link: String) {
+        try {
+            val json = JSONObject(Mobile.decodeLink(link))
+            zone.setText(json.optString("zone"))
+            psk.setText(json.optString("psk"))
+            token.setText(json.optString("token"))
+            candidates.setText(json.optString("candidates"))
+            save()
+            toast("Config imported" + (json.optString("name").let { if (it.isNotEmpty()) ": $it" else "" }))
+        } catch (t: Throwable) {
+            toast("Invalid link: ${t.message}")
+        }
+    }
+
+    private fun toast(m: String) = Toast.makeText(this, m, Toast.LENGTH_SHORT).show()
 
     private fun save() {
         prefs.edit()

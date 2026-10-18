@@ -24,6 +24,7 @@ func main() {
 		dbPath    = flag.String("db", "dnsvpn.db", "path to the SQLite user database")
 		adminUser = flag.String("admin-user", "admin", "admin panel username")
 		adminPass = flag.String("admin-pass", "", "admin panel password (random if empty)")
+		candidates = flag.String("candidates", "", "default resolver candidates baked into clients' config links (comma-separated, CIDRs allowed)")
 	)
 	flag.Parse()
 	if *zone == "" || *psk == "" {
@@ -42,7 +43,7 @@ func main() {
 	}
 	defer st.Close()
 
-	panel, err := admin.New(st, *adminUser, *adminPass)
+	panel, err := admin.New(st, *adminUser, *adminPass, *zone, *psk, *candidates)
 	if err != nil {
 		log.Fatalf("admin: %v", err)
 	}

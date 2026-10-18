@@ -80,6 +80,9 @@ PSK=$PSK
 HTTP_ADDR=$HTTP_ADDR
 ADMIN_USER=admin
 ADMIN_PASS=$ADMIN_PASS
+# default resolver candidates baked into clients' config links (CIDRs allowed), e.g.
+# CANDIDATES=2.188.21.0/24,178.22.122.100,185.51.200.2
+CANDIDATES=
 EOF
   chmod 600 "$ENV_FILE"
   log "Generated new PSK and admin password in $ENV_FILE"
@@ -98,7 +101,7 @@ Wants=network-online.target
 [Service]
 User=$USER_NAME
 EnvironmentFile=$ENV_FILE
-ExecStart=/bin/sh -c '$PREFIX/dnsvpn-server -zone "\$ZONE" -psk "\$PSK" -dns :53 -http "\$HTTP_ADDR" -db $DATADIR/users.db -admin-user "\$ADMIN_USER" -admin-pass "\$ADMIN_PASS"'
+ExecStart=/bin/sh -c '$PREFIX/dnsvpn-server -zone "\$ZONE" -psk "\$PSK" -dns :53 -http "\$HTTP_ADDR" -db $DATADIR/users.db -admin-user "\$ADMIN_USER" -admin-pass "\$ADMIN_PASS" -candidates "\$CANDIDATES"'
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 Restart=always
 RestartSec=2

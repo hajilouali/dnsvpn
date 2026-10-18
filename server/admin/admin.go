@@ -13,7 +13,10 @@ import (
 	"strconv"
 	"time"
 
+	"dnsvpn/internal/configlink"
 	"dnsvpn/server/store"
+
+	qrcode "github.com/skip2/go-qrcode"
 )
 
 //go:embed web/*
@@ -21,14 +24,32 @@ var webFS embed.FS
 
 // Panel serves the admin UI/API.
 type Panel struct {
-	store     *store.Store
-	adminUser string
-	adminPass string
+	store      *store.Store
+	adminUser  string
+	adminPass  string
+	zone       string // tunnel zone, baked into each user's config link
+	psk        string // shared key, baked into each user's config link
+	candidates string // default resolver candidates offered to clients
 }
 
-// New builds a Panel handler.
-func New(st *store.Store, adminUser, adminPass string) (*Panel, error) {
-	return &Panel{store: st, adminUser: adminUser, adminPass: adminPass}, nil
+// New builds a Panel handler. zone/psk/candidates are embedded into the per-user
+// dnsvpn:// config links the panel generates.
+func New(st *store.Store, adminUser, adminPass, zone, psk, candidates string) (*Panel, error) {
+	return &Panel{
+		store: st, adminUser: adminUser, adminPass: adminPass,
+		zone: zone, psk: psk, candidates: candidates,
+	}, nil
+}
+
+// link builds the self-contained dnsvpn:// config link for a user.
+func (p *Panel) link(u *store.User) string {
+	return configlink.Encode(configlink.Config{
+		Name:       u.Username,
+		Zone:       p.zone,
+		PSK:        p.psk,
+		Token:      u.Token,
+		Candidates: p.candidates,
+	})
 }
 
 // Handler returns the http.Handler for the panel (mount under "/").
@@ -40,6 +61,7 @@ func (p *Panel) Handler() http.Handler {
 	mux.HandleFunc("POST /api/users/{id}/enable", p.auth(p.enableUser(true)))
 	mux.HandleFunc("POST /api/users/{id}/disable", p.auth(p.enableUser(false)))
 	mux.HandleFunc("POST /api/users/{id}/reset", p.auth(p.resetUser))
+	mux.HandleFunc("GET /api/users/{id}/qr", p.auth(p.userQR))
 	mux.HandleFunc("DELETE /api/users/{id}", p.auth(p.deleteUser))
 
 	sub, _ := fs.Sub(webFS, "web")
@@ -94,13 +116,15 @@ type userView struct {
 	MaxConcurrent int    `json:"max_concurrent"`
 	Active        int    `json:"active"`
 	CreatedAt     int64  `json:"created_at"`
+	Link          string `json:"link"` // dnsvpn:// config link for this user
 }
 
-func toView(u *store.User, active int) userView {
+func (p *Panel) view(u *store.User, active int) userView {
 	v := userView{
 		ID: u.ID, Username: u.Username, Token: u.Token, Enabled: u.Enabled,
 		QuotaBytes: u.QuotaBytes, UsedBytes: u.UsedBytes,
 		MaxConcurrent: u.MaxConcurrent, Active: active, CreatedAt: u.CreatedAt.Unix(),
+		Link: p.link(u),
 	}
 	if u.ExpiresAt != nil {
 		v.ExpiresAt = u.ExpiresAt.Unix()
@@ -122,7 +146,7 @@ func (p *Panel) listUsers(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]userView, 0, len(users))
 	for _, u := range users {
-		out = append(out, toView(u, p.store.ActiveCount(u.Token)))
+		out = append(out, p.view(u, p.store.ActiveCount(u.Token)))
 	}
 	writeJSON(w, 200, out)
 }
@@ -150,7 +174,7 @@ func (p *Panel) createUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 400)
 		return
 	}
-	writeJSON(w, 201, toView(u, 0))
+	writeJSON(w, 201, p.view(u, 0))
 }
 
 type updateReq struct {
@@ -182,7 +206,7 @@ func (p *Panel) updateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u, _ := p.store.GetUser(id)
-	writeJSON(w, 200, toView(u, p.store.ActiveCount(u.Token)))
+	writeJSON(w, 200, p.view(u, p.store.ActiveCount(u.Token)))
 }
 
 func (p *Panel) enableUser(enabled bool) http.HandlerFunc {
@@ -211,6 +235,28 @@ func (p *Panel) resetUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]string{"status": "ok"})
+}
+
+// userQR returns a PNG QR code of the user's dnsvpn:// config link, so it can be
+// scanned straight into the Android app.
+func (p *Panel) userQR(w http.ResponseWriter, r *http.Request) {
+	id, err := idParam(r)
+	if err != nil {
+		http.Error(w, "bad id", 400)
+		return
+	}
+	u, err := p.store.GetUser(id)
+	if err != nil {
+		http.Error(w, "not found", 404)
+		return
+	}
+	png, err := qrcode.Encode(p.link(u), qrcode.Medium, 320)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Write(png)
 }
 
 func (p *Panel) deleteUser(w http.ResponseWriter, r *http.Request) {

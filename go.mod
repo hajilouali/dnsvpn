@@ -3,6 +3,7 @@ module dnsvpn
 go 1.27.0
 
 require (
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/xjasonlyu/tun2socks/v2 v2.7.0
 	github.com/xtaci/kcp-go/v5 v5.6.72
 	github.com/xtaci/smux v1.5.57
