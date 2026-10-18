@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"syscall"
 	"time"
 
 	"dnsvpn/internal/dnsnet"
@@ -39,6 +40,11 @@ type Config struct {
 	MaxResolvers   int           // active resolvers kept from a scan. 0 => 8
 	RescanInterval time.Duration // 0 => 60s
 	ScanTimeout    time.Duration // per-probe timeout. 0 => 2s
+
+	// DialControl, if set, is applied to every outbound resolver/probe socket. On
+	// Android it wires VpnService.protect(fd) so the client's own DNS traffic bypasses
+	// the TUN rather than looping back into it.
+	DialControl func(network, address string, c syscall.RawConn) error
 
 	Logger *log.Logger
 }
@@ -86,6 +92,7 @@ func (c *Client) buildExchanger() (dnsnet.Exchanger, error) {
 		Mode:        c.cfg.Mode,
 		Timeout:     c.cfg.QueryTimeout,
 		MaxInflight: c.cfg.MaxInflight,
+		Control:     c.cfg.DialControl,
 	})
 	if err != nil {
 		return nil, err
@@ -129,6 +136,7 @@ func (c *Client) scanAndApply() {
 		Timeout:     c.cfg.ScanTimeout,
 		Attempts:    1,
 		Concurrency: 256,
+		Control:     c.cfg.DialControl,
 	}, c.candidateList())
 	best := scanner.Best(results, c.cfg.MaxResolvers)
 	if len(best) == 0 {

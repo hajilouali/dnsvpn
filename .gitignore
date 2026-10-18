@@ -20,6 +20,15 @@ dnsvpn-client-*
 config.json
 !config.example.json
 
+# android build output
+android/.gradle/
+android/build/
+android/app/build/
+android/app/libs/*.aar
+android/local.properties
+android/.idea/
+*.iml
+
 # editor / OS
 .idea/
 .vscode/

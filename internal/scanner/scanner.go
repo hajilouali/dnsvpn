@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"dnsvpn/internal/dnswire"
@@ -39,6 +40,8 @@ type Config struct {
 	Timeout     time.Duration   // per-probe timeout. 0 => 2s
 	Attempts    int             // probes per resolver, best RTT kept. 0 => 2
 	Concurrency int             // max parallel probes. 0 => 64
+	// Control is the net.Dialer.Control hook for probe sockets (VpnService.protect on Android).
+	Control func(network, address string, c syscall.RawConn) error
 }
 
 func (c *Config) defaults() {
@@ -68,7 +71,7 @@ func probeOnce(ctx context.Context, addr string, cfg Config) (time.Duration, err
 	if err != nil {
 		return 0, err
 	}
-	d := net.Dialer{Timeout: cfg.Timeout}
+	d := net.Dialer{Timeout: cfg.Timeout, Control: cfg.Control}
 	conn, err := d.DialContext(ctx, "udp", addr)
 	if err != nil {
 		return 0, err

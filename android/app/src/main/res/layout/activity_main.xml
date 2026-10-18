@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="dnsvpn"
+            android:textSize="24sp"
+            android:paddingBottom="12dp" />
+
+        <EditText
+            android:id="@+id/zone"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="zone (t.example.com)"
+            android:inputType="textNoSuggestions" />
+
+        <EditText
+            android:id="@+id/psk"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="psk"
+            android:inputType="textNoSuggestions" />
+
+        <EditText
+            android:id="@+id/token"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="token"
+            android:inputType="textNoSuggestions" />
+
+        <EditText
+            android:id="@+id/candidates"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="extra resolvers / CIDRs (optional)"
+            android:inputType="textNoSuggestions" />
+
+        <Button
+            android:id="@+id/toggle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Connect" />
+
+        <TextView
+            android:id="@+id/status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="stopped" />
+    </LinearLayout>
+</ScrollView>

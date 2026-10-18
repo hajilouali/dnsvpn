@@ -11,6 +11,7 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"dnsvpn/internal/dnswire"
@@ -45,6 +46,7 @@ type Pool struct {
 	penalty     time.Duration
 	mode        Mode
 	maxInflight int64 // per-resolver concurrent-query cap (0 => unlimited)
+	control     func(network, address string, c syscall.RawConn) error
 	rr          uint64
 	rnd         *rand.Rand
 	rndMu       sync.Mutex
@@ -66,6 +68,10 @@ type Config struct {
 	// spreads across the whole pool instead of piling onto the fastest few and
 	// tripping their rate limits. 0 => 6.
 	MaxInflight int
+	// Control, if set, is the net.Dialer.Control hook applied to every resolver
+	// socket. On Android it calls VpnService.protect(fd) so the client's own DNS
+	// queries bypass the TUN instead of looping back into it.
+	Control func(network, address string, c syscall.RawConn) error
 }
 
 // New builds a Pool.
@@ -92,6 +98,7 @@ func New(cfg Config) (*Pool, error) {
 		penalty:     cfg.Penalty,
 		mode:        cfg.Mode,
 		maxInflight: int64(cfg.MaxInflight),
+		control:     cfg.Control,
 		rnd:         rand.New(rand.NewSource(time.Now().UnixNano())),
 		byAddr:      make(map[string]*resolver),
 	}
@@ -223,7 +230,7 @@ func (p *Pool) Exchange(ctx context.Context, namePayload []byte) ([]byte, error)
 	defer atomic.AddInt64(&r.inflight, -1)
 	start := time.Now()
 
-	d := net.Dialer{Timeout: p.timeout}
+	d := net.Dialer{Timeout: p.timeout, Control: p.control}
 	conn, err := d.DialContext(ctx, "udp", r.addr)
 	if err != nil {
 		p.bench(r)

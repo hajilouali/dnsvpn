@@ -17,15 +17,24 @@ client can talk to the server.
 This has no GUI and no always-on VPN integration, but it validates the client on a phone
 and uses the phone's own ISP resolvers (the ideal case for speed).
 
-## Option B — native VpnService app (roadmap)
+## Option B — native VpnService app
 
-A proper Android app would:
+A native app lives in [`android/`](../android). It wraps the Go core as an `.aar`
+(`gomobile bind` over the [`mobile`](../mobile) package), runs a `VpnService` with a TUN
+and an in-process userspace TCP/IP stack (tun2socks) that feeds the tunnel's SOCKS entry
+point, and has a small Kotlin UI for the zone/psk/token with a connect toggle. The Go
+client's own resolver sockets are kept off the TUN via a `protect(fd)` callback into the
+service, so there is no routing loop.
 
-- wrap the Go client core (`client/core`) as an `.aar` via `gomobile bind`,
-- run a `VpnService` with a `tun` interface and an in-process `tun2socks` that feeds the
-  existing SOCKS entry point,
-- provide a small Kotlin UI for the zone/psk/token, a connect toggle, per-app split
-  tunneling, and the live resolver list from the scanner.
+The APK is built in CI ([.github/workflows/android.yml](../.github/workflows/android.yml))
+and attached to each tagged release — download `dnsvpn-android.apk` from Releases, install
+it (enable "install from unknown sources"), enter your zone/psk/token, and tap Connect.
 
-The core already exposes everything this needs (a `Client` that opens streams to arbitrary
-destinations and a resolver scanner); the remaining work is the mobile packaging and UI.
+**Current limitation:** the tunnel carries **TCP**. Plain-UDP DNS and QUIC are not tunneled
+yet, so the VpnService sets a DNS server and apps fall back to TCP; this is the next piece
+of work (UDP/DNS over the tunnel). Build locally instead of CI with:
+
+```bash
+gomobile bind -target=android -androidapi 21 -javapkg=com.dnsvpn -o android/app/libs/mobile.aar ./mobile
+cd android && ./gradlew assembleDebug
+```
