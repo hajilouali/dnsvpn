@@ -8,8 +8,8 @@ import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.util.Log
-import mobile.Mobile
-import mobile.Protector
+import com.dnsvpn.mobile.Mobile
+import com.dnsvpn.mobile.Protector
 
 /**
  * Captures device traffic into a TUN and hands its file descriptor to the Go core
@@ -97,7 +97,7 @@ class DnsVpnService : VpnService(), Protector {
         val n: Notification = Notification.Builder(this, channelId)
             .setContentTitle("dnsvpn")
             .setContentText("Tunnel active")
-            .setSmallIcon(android.R.drawable.stat_sys_vpn_ic)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
             .build()
         startForeground(1, n)
     }
